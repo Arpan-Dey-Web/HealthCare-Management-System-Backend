@@ -1,5 +1,6 @@
 import { UserStatus } from "../../../generated/prisma/enums";
 import { auth } from "../../lib/auth";
+import { prisma } from "../../lib/prisma";
 
 interface IRegisterPatientPayload {
     name: string;
@@ -15,9 +16,6 @@ const registerPatient = async (payload: IRegisterPatientPayload) => {
             name,
             email,
             password,
-            //default values
-            // needsPasswordChange: false,
-            // role: Role.PATIENT
         }
     })
 
@@ -25,45 +23,67 @@ const registerPatient = async (payload: IRegisterPatientPayload) => {
         throw new Error("Failed to register patient");
     }
 
-    //TODO : Create Patient Profile In Transaction After Sign Up Of Patient In USer Model
-    // const patient = await prisma.$transaction( async (tx) => {
+    try {
+        const patient = await prisma.$transaction(async (tx) => {
+            const patientTx = await tx.patient.create({
+                data: {
+                    userId: data.user.id,
+                    name: payload.name,
+                    email: payload.email,
+                }
 
-    //     await tx.pa
-    // })
+            })
+            return patientTx
+        })
 
-    return data
 
 
-}
-
-interface ILoginUserPayload {
-    email: string;
-    password: string;
-}
-
-const loginUser = async (payload: ILoginUserPayload) => {
-    const { email, password } = payload;
-
-    const data = await auth.api.signInEmail({
-        body: {
-            email,
-            password,
+        return {
+            ...data,
+            patient
         }
-    })
+    } catch (error) {
+        console.log("transaction error", error)
+        await prisma.user.delete({
+            where: {
+                id: data.user.id
+            }
+        })
 
-    if (data.user.status === UserStatus.BLOCKED) {
-        throw new Error("User is blocked");
+        throw Error
+
+
     }
-
-    if (data.user.isDeleted || data.user.status === UserStatus.DELETED) {
-        throw new Error("User is deleted");
-    }
-
-    return data;
-
 }
 
-export const AuthService = {
-    registerPatient,
-    loginUser,
-};
+    interface ILoginUserPayload {
+        email: string;
+        password: string;
+    }
+
+    const loginUser = async (payload: ILoginUserPayload) => {
+        const { email, password } = payload;
+
+        const data = await auth.api.signInEmail({
+            body: {
+                email,
+                password,
+            }
+        })
+
+        if (data.user.status === UserStatus.BLOCKED) {
+            throw new Error("User is blocked");
+        }
+
+        if (data.user.isDeleted || data.user.status === UserStatus.DELETED) {
+            throw new Error("User is deleted");
+        }
+
+        return data;
+
+    }
+
+    export const AuthService = {
+        registerPatient,
+        loginUser,
+    }
